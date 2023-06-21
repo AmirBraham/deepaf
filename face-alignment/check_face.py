@@ -11,6 +11,7 @@ for f in listdir(video_folder):
    if f.endswith(".mp4"):
       vidcap = cv2.VideoCapture(join(video_folder,f))
       success,image = vidcap.read()
-      landmarks = fa.get_landmarks(image)
-      if landmarks is None :
-         print(f'No faces detected {join(video_folder,f)}')
+      if success:
+         landmarks = fa.get_landmarks(image)
+         if landmarks is None :
+            print(f'No faces detected {join(video_folder,f)}')
