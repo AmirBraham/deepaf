@@ -54,7 +54,15 @@ class CustomImageDataset(Dataset):
 
     def __getitem__(self, idx):
         print(self.video_labels.iloc[idx,2])
-        video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
+        video_path = os.path.join(
+        self.video_dir,
+        self.video_labels.iloc[idx, 2],
+        self.video_labels.iloc[idx, 0]
+        )
+
+         # Vérifier si le status est "test" pour ajuster le chemin du fichier vidéo
+        if self.video_labels.iloc[idx, 3] == "test":
+            video_path = os.path.join("./dataset-real/test", self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
         frame_index = self.frame_indices[idx]
