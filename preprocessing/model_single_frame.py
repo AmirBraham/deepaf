@@ -12,8 +12,14 @@ import pandas as pd
 import random
 from torch.utils.data import DataLoader
 from PIL import Image
+import torchvision
+import torch.nn as nn
+import torch.optim as optim
+from torch.optim import lr_scheduler
+import time
+from tempfile import TemporaryDirectory
 
-min_frames_per_video = 150
+min_frames_per_video = 50
 
 data_dir = './dataset-real'
 
@@ -47,6 +53,7 @@ class CustomImageDataset(Dataset):
         return len(self.video_labels)
 
     def __getitem__(self, idx):
+        print(self.video_labels.iloc[idx,2])
         video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
@@ -82,7 +89,7 @@ image_dataloader_test = DataLoader(image_dataset_test,batch_size=4,shuffle=True,
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-dict = {"train" : image_dataloader_train, "test" : image_dataloader_test}
+dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test}
 
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()
