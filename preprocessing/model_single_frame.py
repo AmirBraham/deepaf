@@ -49,7 +49,7 @@ class CustomImageDataset(Dataset):
     def __getitem__(self, idx):
         video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
 
-        video_frames, _ = read_video(video_path)
+        video_frames,_,_ = read_video(video_path)
         frame_index = self.frame_indices[idx]
         frame = video_frames[frame_index]
 
@@ -75,8 +75,10 @@ class CustomImageDataset(Dataset):
             frame_indices.append(random.randint(0, min_frames_per_video))  # Choix aléatoire d'une frame
         return frame_indices
 
-image_dataset_train = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "train", total_number=300)
-image_dataset_test = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "test", total_number = 300)
+image_dataset_train = CustomImageDataset(annotations_file = "./dataset-real/dataset.csv", video_dir = data_dir, status = "train", total_number=300)
+image_dataset_test = CustomImageDataset(annotations_file = "./dataset-real/dataset.csv", video_dir = data_dir, status = "test", total_number = 300)
 image_dataloader_train = DataLoader(image_dataset_train,batch_size=4,shuffle=True, num_workers=4)
 image_dataloader_test = DataLoader(image_dataset_test,batch_size=4,shuffle=True, num_workers=4)
 
+inputs, classes = next(iter(image_dataloader_train))
+print(inputs[0])

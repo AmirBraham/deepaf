@@ -3,8 +3,8 @@ import pandas as pd
 from os import listdir
 from os.path import isfile, join
 import random as rd
-fichiers1 = [f for f in listdir("./vox/test") if isfile(join("./vox/test", f))]
-fichiers2 = [f for f in listdir("./vox/train") if isfile(join("./vox/train", f))]
+fichiers1 = [f for f in listdir("./test") if isfile(join("./test", f))]
+fichiers2 = [f for f in listdir("./train") if isfile(join("./train", f))]
 with open('dataset.csv', 'w') as f:
   writer = csv.writer(f)
   writer.writerow(["file_name", "label","status"])
