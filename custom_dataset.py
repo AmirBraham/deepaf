@@ -1,4 +1,6 @@
 import io
+import os
+import math
 import torch
 from torch.utils.data import Dataset
 from torchvision import datasets
@@ -6,6 +8,7 @@ from torchvision.transforms import ToTensor
 import matplotlib.pyplot as plt
 from torchvision.io import read_video
 from torchvision import transforms
+import pandas as pd
 
 class CustomVideoDataset(Dataset):
     def __init__(self, annotations_file, video_dir, status = "train", total_number = math.inf, transform=None, target_transform=None):
@@ -31,3 +34,12 @@ class CustomVideoDataset(Dataset):
         if self.target_transform:
             label = self.target_transform(label)
         return video, label
+
+video_datasets_train = CustomVideoDataset(annotations_file = "dataset.csv", video_dir = "./vox",total_number=300)
+video_datasets_test = CustomVideoDataset(annotations_file = "dataset.csv", video_dir = "./vox", status = "test",total_n>video_dataloader_train = DataLoader(video_datasets_train)
+video_dataloader_test = DataLoader(video_datasets_test,batch_size = 2)
+print(len(video_dataloader_test))
+print(len(video_dataloader_train))
+
+inputs, classes = next(iter(video_dataloader_test))
+plt.imshow(inputs[0][17])
