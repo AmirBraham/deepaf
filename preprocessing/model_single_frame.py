@@ -49,7 +49,7 @@ class CustomImageDataset(Dataset):
     def __getitem__(self, idx):
         video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
 
-        video_frames, _ = read_video(video_path)
+        video_frames,_,_ = read_video(video_path)
         frame_index = self.frame_indices[idx]
         frame = video_frames[frame_index]
 
