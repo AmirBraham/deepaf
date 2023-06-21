@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from torchvision.io import read_video
 from torchvision import transforms
 import pandas as pd
+from torch.utils.data import DataLoader
 
 class CustomVideoDataset(Dataset):
     def __init__(self, annotations_file, video_dir, status = "train", total_number = math.inf, transform=None, target_transform=None):
@@ -26,7 +27,6 @@ class CustomVideoDataset(Dataset):
     def __getitem__(self, idx):
 
         video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
-
         video = read_video(video_path)[0]
         label = self.video_labels.iloc[idx, 1]
         if self.transform:
@@ -36,10 +36,11 @@ class CustomVideoDataset(Dataset):
         return video, label
 
 video_datasets_train = CustomVideoDataset(annotations_file = "dataset.csv", video_dir = "./vox",total_number=300)
-video_datasets_test = CustomVideoDataset(annotations_file = "dataset.csv", video_dir = "./vox", status = "test",total_n>video_dataloader_train = DataLoader(video_datasets_train)
+video_datasets_test = CustomVideoDataset(annotations_file = "dataset.csv", video_dir = "./vox", status = "test",total_number=300)
+video_dataloader_train = DataLoader(video_datasets_train)
 video_dataloader_test = DataLoader(video_datasets_test,batch_size = 2)
 print(len(video_dataloader_test))
 print(len(video_dataloader_train))
 
-inputs, classes = next(iter(video_dataloader_test))
+inputs, classes = next(iter(video_dataloader_train))
 plt.imshow(inputs[0][17])
