@@ -54,7 +54,7 @@ class CustomImageDataset(Dataset):
         frame = video_frames[frame_index]
 
         # Convertir la frame en objet PIL
-        frame_pil = Image.fromarray(frame.permute(1, 2, 0).numpy().astype('uint8'))
+        frame_pil = Image.fromarray(frame.permute(1,2,0).numpy().astype('uint8'))
 
         # Appliquer les transformations d'images à la frame
         if self.transform:
