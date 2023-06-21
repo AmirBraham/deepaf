@@ -53,6 +53,7 @@ class CustomImageDataset(Dataset):
         return len(self.video_labels)
 
     def __getitem__(self, idx):
+        print(self.video_labels.iloc[idx,2])
         video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
