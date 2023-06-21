@@ -6,6 +6,7 @@ import sys
 
 
 
+
 def cleanup():
    folder = sys.argv[1]
    video_folder="/home/pafvideo/video-preprocessing-master/vox/" + folder

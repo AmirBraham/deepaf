@@ -18,10 +18,17 @@ import torch.optim as optim
 from torch.optim import lr_scheduler
 import time
 from tempfile import TemporaryDirectory
+import warnings
 
-min_frames_per_video = 50
+# Ignorer les avertissements
+warnings.filterwarnings("ignore")
+
+MIN_FRAMES_PER_VIDEO = 50
+TRAIN_SIZE = 100
+TEST_SIZE = 25
 
 data_dir = '.'
+dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE}
 
 data_transforms = {
     'train': transforms.Compose([
@@ -53,13 +60,12 @@ class CustomImageDataset(Dataset):
         return len(self.video_labels)
 
     def __getitem__(self, idx):
-        print(self.video_labels.iloc[idx,2])
         l_status = self.video_labels.iloc[idx,2]
         l_fake = self.video_labels.iloc[idx,1]
         if (l_fake == "0"):
-            video_path = os.path.join(self.video_dir, "dataset-fake", self.video_labels.iloc[idx, 0])
+            video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx,3], self.video_labels.iloc[idx, 0])
         else:
-            video_path = os.path.join(self.video_dir, "dataset-real", self.video_labels.iloc[idx, 3], self.video_labels.iloc[idx, 0])
+            video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 3], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
         frame_index = self.frame_indices[idx]
@@ -84,11 +90,11 @@ class CustomImageDataset(Dataset):
     def _get_random_frame_indices(self, num_videos):
         frame_indices = []
         for _ in range(num_videos):
-            frame_indices.append(random.randint(0, min_frames_per_video))  # Choix aléatoire d'une frame
+            frame_indices.append(random.randint(0, MIN_FRAMES_PER_VIDEO))  # Choix aléatoire d'une frame
         return frame_indices
 
-image_dataset_train = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "train", total_number=500)
-image_dataset_test = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "test", total_number = 100)
+image_dataset_train = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "train", total_number=TRAIN_SIZE)
+image_dataset_test = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "test", total_number = TEST_SIZE)
 image_dataloader_train = DataLoader(image_dataset_train,batch_size=4,shuffle=True, num_workers=4)
 image_dataloader_test = DataLoader(image_dataset_test,batch_size=4,shuffle=True, num_workers=4)
 
@@ -111,7 +117,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
             print('-' * 10)
 
             # Each epoch has a training and validation phase
-            for phase in ['train', 'val']:
+            for phase in ['train', 'test']:
                 if phase == 'train':
                     model.train()  # Set model to training mode
                 else:
@@ -152,7 +158,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                 print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
 
                 # deep copy the model
-                if phase == 'val' and epoch_acc > best_acc:
+                if phase == 'test' and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     torch.save(model.state_dict(), best_model_params_path)
 
