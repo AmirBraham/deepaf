@@ -16,7 +16,6 @@ import torch
 
 FOLDER_REAL = "/home/pafvideo/deepaf/dataset-real"
 FOLDER_FAKE = "/home/pafvideo/deepaf/dataset-fake"
-NB_DEEPFAKES = 10
 
 def load_checkpoints(config_path, checkpoint_path, cpu=False):
 
@@ -112,14 +111,16 @@ def generateDeepFake(source_image,driving_video,result_video):
 
 
 if __name__ == "__main__":
-    faces = listdir(join(FOLDER_REAL,"faces"))
+    faces = listdir(join(FOLDER_REAL,"celebfaces"))
     len_faces = len(faces)
     random.shuffle(faces)
     videos = listdir(join(FOLDER_REAL,"train"))
     len_videos = len(videos)
     random.shuffle(videos)
+    NB_DEEPFAKES = 25000
+
     for i in range(NB_DEEPFAKES):
-        random_face = join(join(FOLDER_REAL,"faces"),faces[i%len_faces])
+        random_face = join(join(FOLDER_REAL,"celebfaces"),faces[i%len_faces])
         random_video = join(join(FOLDER_REAL,"train"),videos[i%len_videos])
         deepfake_path = join(FOLDER_FAKE,basename(normpath(random_video)))
         #print(random_face, random_video)
