@@ -5,4 +5,4 @@ import random
 FOLDER = "/home/pafvideo/deepaf/dataset-real"
 
 faces = listdir(join(FOLDER,"faces"))
-print(join(faces,str(random.choice(faces))))
+print(join(join(FOLDER,"faces"),random.choice(faces)))
