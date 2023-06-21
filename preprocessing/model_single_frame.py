@@ -21,7 +21,7 @@ from tempfile import TemporaryDirectory
 
 min_frames_per_video = 50
 
-data_dir = './dataset-real'
+data_dir = '.'
 
 data_transforms = {
     'train': transforms.Compose([
@@ -54,15 +54,12 @@ class CustomImageDataset(Dataset):
 
     def __getitem__(self, idx):
         print(self.video_labels.iloc[idx,2])
-        video_path = os.path.join(
-        self.video_dir,
-        self.video_labels.iloc[idx, 2],
-        self.video_labels.iloc[idx, 0]
-        )
-
-         # Vérifier si le status est "test" pour ajuster le chemin du fichier vidéo
-        if self.video_labels.iloc[idx, 3] == "test":
-            video_path = os.path.join("./dataset-real/test", self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
+        l_status = self.video_labels.iloc[idx,2]
+        l_fake = self.video_labels.iloc[idx,1]
+        if (l_fake == "0"):
+            video_path = os.path.join(self.video_dir, "dataset-fake", self.video_labels.iloc[idx, 0])
+        else:
+            video_path = os.path.join(self.video_dir, "dataset-real", self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
         frame_index = self.frame_indices[idx]
