@@ -59,7 +59,7 @@ class CustomImageDataset(Dataset):
         if (l_fake == "0"):
             video_path = os.path.join(self.video_dir, "dataset-fake", self.video_labels.iloc[idx, 0])
         else:
-            video_path = os.path.join(self.video_dir, "dataset-real", self.video_labels.iloc[idx, 2], self.video_labels.iloc[idx, 0])
+            video_path = os.path.join(self.video_dir, "dataset-real", self.video_labels.iloc[idx, 3], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
         frame_index = self.frame_indices[idx]
