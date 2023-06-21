@@ -3,7 +3,7 @@ import cv2
 from os import listdir
 from os.path import join
 import torch
-video_folder="/home/pafvideo/video-preprocessing-master/vox/test"
+video_folder="/home/pafvideo/video-preprocessing-master/vox/train"
 
 fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False, device='cuda')
 
