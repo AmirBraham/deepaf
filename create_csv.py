@@ -10,11 +10,10 @@ with open('dataset.csv', 'w') as f:
   writer.writerow(["file_name", "label","status"])
   for fichier in fichiers1:
   	if np.random() < 0.2:
-    	writer.writerow([fichier, "1", "test"])
-    else:
+  		writer.writerow([fichier, "1", "test"])
+  	else:
     	writer.writerow([fichier, "1", "train"])
   for fichier in fichiers2:
-    writer.writerow([fichier, "1"])
   	if np.random() < 0.2:
     	writer.writerow([fichier, "1", "test"])
     else:
