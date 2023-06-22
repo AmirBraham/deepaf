@@ -58,7 +58,6 @@ class CustomImageDataset(Dataset):
         video_labels_1 = video_labels_1.sample(num_samples)
 
         self.video_labels = pd.concat([video_labels_0, video_labels_1], ignore_index=True)[:total_number]
-        #self.video_labels = self.video_labels.sample(frac=1).reset_index(drop=True)[:min(len(self.video_labels), total_number)]
         self.video_dir = video_dir
         self.transform = transform[status]
         self.target_transform = target_transform
@@ -77,9 +76,10 @@ class CustomImageDataset(Dataset):
             video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 3], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
-        frame_index = self.frame_indices[idx]
+        num_frames = len(video_frames)
+
+        frame_index = random.randint(0, num_frames - 1)
         frame = video_frames[frame_index]
-        frame.size()
 
         # Convertir la frame en objet PIL
         frame_pil = Image.fromarray(frame.numpy().astype('uint8')).convert('RGB')
@@ -97,12 +97,6 @@ class CustomImageDataset(Dataset):
             label = self.target_transform(label)
 
         return frame_transformed, label
-
-    def _get_random_frame_indices(self, num_videos):
-        frame_indices = []
-        for _ in range(num_videos):
-            frame_indices.append(random.randint(0, MIN_FRAMES_PER_VIDEO))  # Choix aléatoire d'une frame
-        return frame_indices
 
 image_dataset_train = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "train", total_number=TRAIN_SIZE)
 image_dataset_test = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "test", total_number = TEST_SIZE)
