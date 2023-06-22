@@ -24,8 +24,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 MIN_FRAMES_PER_VIDEO = 50
-TRAIN_SIZE = 100
-TEST_SIZE = 25
+TRAIN_SIZE = 300
+TEST_SIZE = 100
 
 data_dir = '.'
 dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE}
@@ -49,7 +49,16 @@ class CustomImageDataset(Dataset):
     def __init__(self, annotations_file, video_dir, status="train", total_number=math.inf, transform=data_transforms, target_transform=None):
         df = pd.read_csv(annotations_file)
         self.video_labels = df[df["status"] == status]
-        self.video_labels = self.video_labels.sample(frac=1).reset_index(drop=True)[:min(len(self.video_labels), total_number)]
+        video_labels_0 = self.video_labels[self.video_labels["label"] == 0]
+        video_labels_1 = self.video_labels[self.video_labels["label"] == 1]
+        
+        num_samples = min(total_number // 2, len(video_labels_0), len(video_labels_1))
+
+        video_labels_0 = video_labels_0.sample(num_samples)
+        video_labels_1 = video_labels_1.sample(num_samples)
+
+        self.video_labels = pd.concat([video_labels_0, video_labels_1], ignore_index=True)[:total_number]
+        #self.video_labels = self.video_labels.sample(frac=1).reset_index(drop=True)[:min(len(self.video_labels), total_number)]
         self.video_dir = video_dir
         self.transform = transform[status]
         self.target_transform = target_transform
@@ -70,9 +79,11 @@ class CustomImageDataset(Dataset):
         video_frames,_,_ = read_video(video_path)
         frame_index = self.frame_indices[idx]
         frame = video_frames[frame_index]
+        frame.size()
 
         # Convertir la frame en objet PIL
-        frame_pil = Image.fromarray(frame[0].numpy().astype('uint8')).convert('RGB')
+        frame_pil = Image.fromarray(frame.numpy().astype('uint8')).convert('RGB')
+        frame_pil.save("working_frame.png")
 
         # Appliquer les transformations d'images à la frame
         if self.transform:
@@ -99,6 +110,7 @@ image_dataloader_train = DataLoader(image_dataset_train,batch_size=4,shuffle=Tru
 image_dataloader_test = DataLoader(image_dataset_test,batch_size=4,shuffle=True, num_workers=4)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print("Device: ", device)
 
 dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test}
 
