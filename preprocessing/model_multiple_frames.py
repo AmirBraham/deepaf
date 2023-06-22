@@ -27,6 +27,7 @@ MIN_FRAMES_PER_VIDEO = 50
 TRAIN_SIZE = 300
 TEST_SIZE = 100
 BATCH_SIZE = 4
+NUMBER_FRAMES = 3
 
 ######### DATA ############
 
@@ -104,8 +105,8 @@ class CustomImageDataset(Dataset):
 
         return frames_transformed, label
 
-image_dataset_train = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "train", total_number=TRAIN_SIZE,number_frames=2)
-image_dataset_test = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "test", total_number = TEST_SIZE,number_frames=3)
+image_dataset_train = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "train", total_number=TRAIN_SIZE,number_frames=NUMBER_FRAMES)
+image_dataset_test = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "test", total_number = TEST_SIZE,number_frames=NUMBER_FRAMES)
 image_dataloader_train = DataLoader(image_dataset_train,batch_size=BATCH_SIZE,shuffle=True, num_workers=4)
 image_dataloader_test = DataLoader(image_dataset_test,batch_size=BATCH_SIZE,shuffle=True, num_workers=4)
 
@@ -217,5 +218,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
 
 model_conv = train_model(model_conv, criterion, optimizer_conv,
                          exp_lr_scheduler, num_epochs=25)
+
+####### VISUALIZATION ########
 
 
