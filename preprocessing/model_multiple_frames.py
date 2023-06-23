@@ -19,21 +19,38 @@ from torch.optim import lr_scheduler
 import time
 from tempfile import TemporaryDirectory
 import warnings
+import wandb
 
 # Ignorer les avertissements
 warnings.filterwarnings("ignore")
 
-MIN_FRAMES_PER_VIDEO = 50
-TRAIN_SIZE = 300
-TEST_SIZE = 100
-BATCH_SIZE = 4
-NUMBER_FRAMES = 3
+TRAIN_SIZE = 2000
+TEST_SIZE = 1000
+VAL_SIZE = 10000
+BATCH_SIZE = 32
+NUMBER_FRAMES = 5
+NUM_EPOCHS = 20
 
 ######### DATA ############
 
+wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
+
+# start a new wandb run to track this script
+wandb.init(
+    dir="./wandb",
+    # set the wandb project where this run will be logged
+    project="training_with_5_frames",
+    
+    # track hyperparameters and run metadata
+    config={
+    "epochs": NUM_EPOCHS,
+    "batch_size": BATCH_SIZE
+    }
+)
+
 data_dir = '.'
 data_file = "dataset.csv"
-dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE}
+dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE,"val":VAL_SIZE}
 
 data_transforms = {
     'train': transforms.Compose([
@@ -48,6 +65,12 @@ data_transforms = {
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
+        'val': transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
 }
 
 class CustomImageDataset(Dataset):
@@ -83,8 +106,8 @@ class CustomImageDataset(Dataset):
         video_frames,_,_ = read_video(video_path)
         num_frames = len(video_frames)
 
-        frame_index = random.randint(0,num_frames-1)
-        frames = [video_frames[frame_index + i] for i in range(self.num_frames)]
+        frame_index = random.randint(0,num_frames-1-self.number_frames)
+        frames = [video_frames[frame_index + i] for i in range(self.number_frames)]
 
         frames_transformed = []
         for frame in frames:
@@ -107,10 +130,12 @@ class CustomImageDataset(Dataset):
 
 image_dataset_train = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "train", total_number=TRAIN_SIZE,number_frames=NUMBER_FRAMES)
 image_dataset_test = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "test", total_number = TEST_SIZE,number_frames=NUMBER_FRAMES)
+image_dataset_val = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "val", total_number = VAL_SIZE,number_frames=NUMBER_FRAMES)
 image_dataloader_train = DataLoader(image_dataset_train,batch_size=BATCH_SIZE,shuffle=True, num_workers=4)
 image_dataloader_test = DataLoader(image_dataset_test,batch_size=BATCH_SIZE,shuffle=True, num_workers=4)
+image_dataloader_val = DataLoader(image_dataset_test,batch_size=1,shuffle=True, num_workers=4)
 
-dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test}
+dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test, "val" : image_dataloader_val}
 
 ###### MODEL #######
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -127,7 +152,7 @@ model_conv = model_conv.to(device)
 
 criterion = nn.CrossEntropyLoss()
 
-optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001, momentum=0.9)
+optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001)
 
 # Decay LR by a factor of 0.1 every 7 epochs
 exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
@@ -197,8 +222,8 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                 epoch_loss = running_loss / dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
-                print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
-
+                #print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
+                wandb.log({"acc":epoch_acc,"loss":epoch_loss})
                 # deep copy the model
                 if phase == 'test' and epoch_acc > best_acc:
                     best_acc = epoch_acc
@@ -216,8 +241,18 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
 
 ######## TRAINING ########
 
+wandb.watch(model_conv,log_freq=100)
+
 model_conv = train_model(model_conv, criterion, optimizer_conv,
-                         exp_lr_scheduler, num_epochs=25)
+                         exp_lr_scheduler, num_epochs=NUM_EPOCHS)
+
+# Spécifiez le chemin de sauvegarde souhaité
+model_path = 'model_5_frames.pt'
+
+# Sauvegarde du modèle
+torch.save(model_conv.state_dict(), model_path)
+
+wandb.finish()
 
 ####### VISUALIZATION ########
 

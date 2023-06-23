@@ -6,3 +6,4 @@ dataset-fake
 test-cleanup
 haarcascades
 wandb
+test_evaluate
