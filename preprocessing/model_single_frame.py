@@ -19,6 +19,25 @@ from torch.optim import lr_scheduler
 import time
 from tempfile import TemporaryDirectory
 import warnings
+import wandb
+
+
+NUM_EPOCHS = 10
+
+# start a new wandb run to track this script
+wandb.init(
+    dir=".",
+    # set the wandb project where this run will be logged
+    project="my-awesome-project",
+    
+    # track hyperparameters and run metadata
+    config={
+    "epochs": NUM_EPOCHS,
+    "batch_size":4
+    }
+)
+wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
+
 
 # Ignorer les avertissements
 warnings.filterwarnings("ignore")
@@ -26,9 +45,10 @@ warnings.filterwarnings("ignore")
 MIN_FRAMES_PER_VIDEO = 50
 TRAIN_SIZE = 300
 TEST_SIZE = 150
+VAL_SIZE = 10000
 
 data_dir = '.'
-dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE}
+dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE,"val":VAL_SIZE}
 
 data_transforms = {
     'train': transforms.Compose([
@@ -38,6 +58,12 @@ data_transforms = {
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
     'test': transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ]),
+    'val': transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
@@ -63,7 +89,7 @@ class CustomImageDataset(Dataset):
         self.transform = transform[status]
         self.target_transform = target_transform
         self.frame_indices = self._get_random_frame_indices(len(self.video_labels))
-        print(self.video_labels)
+        #print(self.video_labels)
 
     def __len__(self):
         return len(self.video_labels)
@@ -106,13 +132,15 @@ class CustomImageDataset(Dataset):
 
 image_dataset_train = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "train", total_number=TRAIN_SIZE)
 image_dataset_test = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "test", total_number = TEST_SIZE)
+image_dataset_val = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "val", total_number = VAL_SIZE)
 image_dataloader_train = DataLoader(image_dataset_train,batch_size=4,shuffle=True, num_workers=4)
 image_dataloader_test = DataLoader(image_dataset_test,batch_size=4,shuffle=True, num_workers=4)
+image_dataloader_val = DataLoader(image_dataset_test,batch_size=1,shuffle=True, num_workers=4)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print("Device: ", device)
 
-dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test}
+dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test, "val" : image_dataloader_val}
 
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()
@@ -125,8 +153,8 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
         best_acc = 0.0
 
         for epoch in range(num_epochs):
-            print(f'Epoch {epoch}/{num_epochs - 1}')
-            print('-' * 10)
+            #print(f'Epoch {epoch}/{num_epochs - 1}')
+            #print('-' * 10)
 
             # Each epoch has a training and validation phase
             for phase in ['train', 'test']:
@@ -167,14 +195,12 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                 epoch_loss = running_loss / dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
-                print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
-
+                #print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
+                wandb.log({"acc":epoch_acc,"loss":epoch_loss})
                 # deep copy the model
                 if phase == 'test' and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     torch.save(model.state_dict(), best_model_params_path)
-
-            print()
 
         time_elapsed = time.time() - since
         print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
@@ -198,13 +224,15 @@ criterion = nn.CrossEntropyLoss()
 
 # Observe that only parameters of final layer are being optimized as
 # opposed to before.
-optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001, momentum=0.9)
+optimizer_conv = optim.Adam(model_conv.fc.parameters(), lr=0.001)
 
 # Decay LR by a factor of 0.1 every 7 epochs
 exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
 
+wandb.watch(model_conv,log_freq=100)
+
 model_conv = train_model(model_conv, criterion, optimizer_conv,
-                         exp_lr_scheduler, num_epochs=25)
+                         exp_lr_scheduler, num_epochs=NUM_EPOCHS)
 
 # Après l'entraînement du modèle et la sélection du meilleur modèle
 
@@ -213,3 +241,5 @@ model_path = 'model.pt'
 
 # Sauvegarde du modèle
 torch.save(model_conv.state_dict(), model_path)
+
+wandb.finish()

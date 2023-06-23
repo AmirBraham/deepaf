@@ -83,8 +83,8 @@ class CustomImageDataset(Dataset):
         video_frames,_,_ = read_video(video_path)
         num_frames = len(video_frames)
 
-        frame_indices = random.sample(range(num_frames), self.number_frames)
-        frames = [video_frames[i] for i in frame_indices]
+        frame_index = random.randint(0,num_frames-1)
+        frames = [video_frames[frame_index + i] for i in range(self.num_frames)]
 
         frames_transformed = []
         for frame in frames:

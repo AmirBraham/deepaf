@@ -12,17 +12,17 @@ data_transforms = {
         transforms.RandomResizedCrop(224),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406, 0], [0.229, 0.224, 0.225, 1])
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
     'test': transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406, 0], [0.229, 0.224, 0.225, 1])
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
 }
 
-class_names = {'train' : "Fake", 'val' : "Real"}
+class_names = {0 : "Fake", 1 : "Real"}
 
 def imshow(inp, title=None):
     """Display image for Tensor."""
@@ -31,7 +31,7 @@ def imshow(inp, title=None):
     std = np.array([0.229, 0.224, 0.225])
     inp = std * inp + mean
     inp = np.clip(inp, 0, 1)
-    plt.imsave("test",inp)
+    plt.imsave("test.png", inp)
     if title is not None:
         plt.title(title)
     plt.pause(0.001)  # pause a bit so that plots are updated
@@ -41,9 +41,20 @@ def visualize_model_predictions(model,img_path):
     model.eval()
 
     img = Image.open(img_path)
+    # Afficher la taille de l'image
+    width, height = img.size
+    print("Largeur :", width)
+    print("Hauteur :", height)
+
+    # Vérifier le mode de l'image (nombre de canaux)
+    mode = img.mode
+    print("Mode de l'image :", mode)
+
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
     img = data_transforms['test'](img)
     img = img.unsqueeze(0)
-    img = img.to(device)
 
     with torch.no_grad():
         outputs = model(img)
@@ -51,7 +62,8 @@ def visualize_model_predictions(model,img_path):
 
         ax = plt.subplot(2,2,1)
         ax.axis('off')
-        ax.set_title(f'Predicted: {class_names[preds[0]]}')
+        ax.set_title(f'Predicted: {class_names[preds[0].item()]}')
+        print(class_names[preds[0].item()])
         imshow(img.cpu().data[0])
 
         model.train(mode=was_training)
@@ -70,4 +82,5 @@ model.load_state_dict(torch.load(model_path))
 # Mettez le modèle en mode d'évaluation
 model.eval()
 
-visualize_model_predictions(model,"deepfake-example_real.png")
+visualize_model_predictions(model,"deepfake-example_fake.png")
+

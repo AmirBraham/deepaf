@@ -10,17 +10,26 @@ with open('dataset.csv', 'w') as f:
   writer = csv.writer(f)
   writer.writerow(["file_name", "label","status","subfolder"])
   for fichier in fichiers1:
-    if (rd.random() < 0.2):
+    rand = rd.random()
+    if (rand < 0.1):
       writer.writerow([fichier, "1", "test","dataset-real/test"])
+    elif (rand < 0.2):
+      writer.writerow([fichier, "1", "val","dataset-real/test"])
     else:
       writer.writerow([fichier, "1", "train","dataset-real/test"])
   for fichier in fichiers2:
-    if (rd.random() < 0.2):
+    rand = rd.random()
+    if (rand < 0.1):
       writer.writerow([fichier, "1", "test","dataset-real/train"])
+    elif (rand < 0.2):
+      writer.writerow([fichier, "1", "val","dataset-real/train"])
     else:
       writer.writerow([fichier, "1", "train","dataset-real/train"])
   for fichier in fichiers3:
-    if (rd.random() < 0.2):
+    rand = rd.random()
+    if (rand < 0.1):
       writer.writerow([fichier, "0", "test","dataset-fake"])
+    elif (rand < 0.2):
+      writer.writerow([fichier, "0", "val","dataset-fake"])
     else:
       writer.writerow([fichier, "0", "train","dataset-fake"])
