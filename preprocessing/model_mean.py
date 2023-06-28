@@ -24,6 +24,11 @@ import torch.nn.functional as F
 # Ignorer les avertissements
 warnings.filterwarnings("ignore")
 
+os.environ["WANDB_CONFIG_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
+os.environ["WANDB_CACHE_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
+os.environ["WANDB_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
+
+
 data_transforms = {
     'train': transforms.Compose([
         transforms.RandomResizedCrop(224),
@@ -45,12 +50,27 @@ data_transforms = {
     ])
 }
 
-BATCH_SIZE = 32 #SHOULDN'T CHANGE FROM 32 UNLESS YOU CHANGE THE MODEL TOO
+BATCH_SIZE = 32 
 TRAIN_SIZE = 50 * BATCH_SIZE #SHOULD ALWAYS BE A MULTIPLE OF BATCH_SIZE AND INFERIOR TO THE TOTAL NUMBERS OF VIDEO AVAILABLE
 TEST_SIZE = 25 * BATCH_SIZE
 VAL_SIZE = 10 * BATCH_SIZE
-NUMBER_FRAMES = 5 #SHOULDN'T CHANGE FROM 5 UNLESS YOU CHANGE THE MODEL TOO
+NUMBER_FRAMES = 5 
 NUM_EPOCHS = 15
+
+wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
+
+# start a new wandb run to track this script
+wandb.init(
+    dir="./wandb",
+    # set the wandb project where this run will be logged
+    project="training_mean_no_relu",
+    
+    # track hyperparameters and run metadata
+    config={
+    "epochs": NUM_EPOCHS,
+    "batch_size": BATCH_SIZE
+    }
+)
 
 data_dir = '.'
 data_file = "dataset.csv"
@@ -81,16 +101,17 @@ class DeepFakeModel(nn.Module):
     # we're accepting only a single input in here, but if you want,
     # feel free to use more
     def forward(self, input):
-        x = input.view(160,3,224,224)
+        x = input.view(BATCH_SIZE*NUMBER_FRAMES,3,224,224)
         x = self.first_layers(x)
-        x = x.view(32,5,-1)
+        x = x.view(BATCH_SIZE,NUMBER_FRAMES,-1)
         x_moy = torch.mean(x,dim=1)
-        x_moy = F.relu(self.classifier(x_moy))
+        x_moy = self.classifier(x_moy)
         return x_moy
 
 model = DeepFakeModel(model=model_conv).to(device)
+#model.load_state_dict(torch.load("./model_mean_.pt"))
 criterion = nn.CrossEntropyLoss()
-optimizer_conv = optim.Adam(model.parameters(), lr=0.001)
+optimizer_conv = optim.SGD(model.parameters(), lr=0.01)
 exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
 
 class CustomImageDataset(Dataset):
@@ -212,11 +233,12 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                 epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
                 print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
-                #wandb.log({"acc":epoch_acc,"loss":epoch_loss})
+                wandb.log({"acc":epoch_acc,"loss":epoch_loss})
                 # deep copy the model
                 if phase == 'test' and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     torch.save(model.state_dict(), best_model_params_path)
+                #wandb.log({f'Epoch {epoch} Weights': wandb.Histogram(model.parameters())})
 
         time_elapsed = time.time() - since
         print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
@@ -226,8 +248,13 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
         model.load_state_dict(torch.load(best_model_params_path))
     return model
 
+wandb.watch(model,log_freq=100)
+#wandb.log({'Initial Weights': wandb.Histogram(model.parameters())})
+
 model = train_model(model, criterion, optimizer_conv,
                          exp_lr_scheduler, num_epochs=NUM_EPOCHS)
 
-model_path = 'model_mean_manyframes.pt'
-torch.save(model_conv.state_dict(), model_path)
+model_path = 'model_mean_no_relu.pt'
+torch.save(model.state_dict(), model_path)
+
+wandb.finish()
