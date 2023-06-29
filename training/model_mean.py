@@ -19,37 +19,15 @@ import time
 from tempfile import TemporaryDirectory
 import warnings
 import wandb
+import torch.nn.functional as F
 
 # Ignorer les avertissements
 warnings.filterwarnings("ignore")
 
-TRAIN_SIZE = 2000
-TEST_SIZE = 1000
-VAL_SIZE = 10000
-BATCH_SIZE = 32
-NUMBER_FRAMES = 5
-NUM_EPOCHS = 10
+os.environ["WANDB_CONFIG_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
+os.environ["WANDB_CACHE_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
+os.environ["WANDB_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
 
-######### DATA ############
-
-wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
-
-# start a new wandb run to track this script
-wandb.init(
-    dir="./wandb",
-    # set the wandb project where this run will be logged
-    project="training_5_frames_backward",
-    
-    # track hyperparameters and run metadata
-    config={
-    "epochs": NUM_EPOCHS,
-    "batch_size": BATCH_SIZE
-    }
-)
-
-data_dir = '.'
-data_file = "dataset.csv"
-dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE,"val":VAL_SIZE}
 
 data_transforms = {
     'train': transforms.Compose([
@@ -72,6 +50,70 @@ data_transforms = {
     ])
 }
 
+BATCH_SIZE = 32 
+TRAIN_SIZE = 50 * BATCH_SIZE #SHOULD ALWAYS BE A MULTIPLE OF BATCH_SIZE AND INFERIOR TO THE TOTAL NUMBERS OF VIDEO AVAILABLE
+TEST_SIZE = 25 * BATCH_SIZE
+VAL_SIZE = 10 * BATCH_SIZE
+NUMBER_FRAMES = 5 
+NUM_EPOCHS = 15
+
+wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
+
+# start a new wandb run to track this script
+wandb.init(
+    dir="./wandb",
+    # set the wandb project where this run will be logged
+    project="training_mean_no_relu",
+    
+    # track hyperparameters and run metadata
+    config={
+    "epochs": NUM_EPOCHS,
+    "batch_size": BATCH_SIZE
+    }
+)
+
+data_dir = '.'
+data_file = "dataset.csv"
+dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE,"val":VAL_SIZE}
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print("Device: ", device)
+
+model_conv = torchvision.models.resnet18(weights="IMAGENET1K_V1")
+for param in model_conv.parameters():
+    param.requires_grad = False
+num_ftrs = model_conv.fc.in_features
+model_conv.fc = nn.Linear(num_ftrs, 2)
+model_conv.load_state_dict(torch.load("./model_5_frames.pt"))
+model_conv = torch.nn.Sequential(*(list(model_conv.children())[:-1]))
+
+class DeepFakeModel(nn.Module):
+
+    def __init__(self,model):
+        # this is the place where you instantiate all your modules
+        # you can later access them using the same names you've given them in
+        # here
+        super(DeepFakeModel, self).__init__()
+        self.first_layers = model
+        self.classifier = nn.Linear(512,2)
+
+    # it's the forward function that defines the network structure
+    # we're accepting only a single input in here, but if you want,
+    # feel free to use more
+    def forward(self, input):
+        x = input.view(BATCH_SIZE*NUMBER_FRAMES,3,224,224)
+        x = self.first_layers(x)
+        x = x.view(BATCH_SIZE,NUMBER_FRAMES,-1)
+        x_moy = torch.mean(x,dim=1)
+        x_moy = self.classifier(x_moy)
+        return x_moy
+
+model = DeepFakeModel(model=model_conv).to(device)
+#model.load_state_dict(torch.load("./model_mean_.pt"))
+criterion = nn.CrossEntropyLoss()
+optimizer_conv = optim.SGD(model.parameters(), lr=0.01)
+exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
+
 class CustomImageDataset(Dataset):
     def __init__(self, annotations_file, video_dir, status="train", total_number=math.inf, number_frames = 1,transform=data_transforms, target_transform=None):
         df = pd.read_csv(annotations_file)
@@ -89,7 +131,6 @@ class CustomImageDataset(Dataset):
         self.transform = transform[status]
         self.target_transform = target_transform
         self.number_frames = number_frames
-        print(self.video_labels)
 
     def __len__(self):
         return len(self.video_labels)
@@ -120,6 +161,8 @@ class CustomImageDataset(Dataset):
             else:
                 frames_transformed.append(frame_pil)
 
+        frames_transformed = torch.stack(frames_transformed)
+
         label = self.video_labels.iloc[idx, 1]
 
         if self.target_transform:
@@ -135,26 +178,6 @@ image_dataloader_test = DataLoader(image_dataset_test,batch_size=BATCH_SIZE,shuf
 image_dataloader_val = DataLoader(image_dataset_val,batch_size=1,shuffle=True, num_workers=4)
 
 dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test, "val" : image_dataloader_val}
-
-###### MODEL #######
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print("Device: ", device)
-
-model_conv = torchvision.models.resnet18(weights='IMAGENET1K_V1')
-for param in model_conv.parameters():
-    param.requires_grad = False
-
-num_ftrs = model_conv.fc.in_features
-model_conv.fc = nn.Linear(num_ftrs, 2)
-
-model_conv = model_conv.to(device)
-
-criterion = nn.CrossEntropyLoss()
-
-optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001)
-
-# Decay LR by a factor of 0.1 every 7 epochs
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
 
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()
@@ -182,6 +205,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
 
                 # Iterate over data.
                 for inputs, labels in dataloaders[phase]:
+                    inputs = inputs.to(device)
                     labels = labels.to(device)
 
                     # zero the parameter gradients
@@ -190,22 +214,9 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                     # forward
                     # track history if only in train
                     with torch.set_grad_enabled(phase == 'train'):
-                        num_frames = len(inputs)
-                        batch_size = inputs[0].size(0)
-
-                        temp_loss = 0
-                        temp_preds = torch.Tensor([0 for i in range(batch_size)]).to(device)
-
-                        for index in range(num_frames):
-                            inputs_ieme_frame = inputs[index]
-                            inputs_ieme_frame = inputs_ieme_frame.to(device)
-                            outputs = model(inputs_ieme_frame)
-                            _, preds = torch.max(outputs, 1)
-                            temp_preds = torch.add(temp_preds,preds)
-                            temp_loss += criterion(outputs, labels)
-
-                        loss = temp_loss/num_frames
-                        preds = torch.round(temp_preds/num_frames)
+                        outputs = model(inputs)
+                        _, preds = torch.max(outputs, 1)
+                        loss = criterion(outputs, labels)
 
                         # backward + optimize only if in training phase
                         if phase == 'train':
@@ -213,21 +224,21 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                             optimizer.step()
 
                     # statistics
-                    running_loss += loss.item() * batch_size
+                    running_loss += loss.item() * inputs.size(0)
                     running_corrects += torch.sum(preds == labels.data)
-                    
                 if phase == 'train':
                     scheduler.step()
 
                 epoch_loss = running_loss / dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
-                #print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
+                print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
                 wandb.log({"acc":epoch_acc,"loss":epoch_loss})
                 # deep copy the model
                 if phase == 'test' and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     torch.save(model.state_dict(), best_model_params_path)
+                #wandb.log({f'Epoch {epoch} Weights': wandb.Histogram(model.parameters())})
 
         time_elapsed = time.time() - since
         print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
@@ -237,22 +248,13 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
         model.load_state_dict(torch.load(best_model_params_path))
     return model
 
-######## TRAINING ########
+wandb.watch(model,log_freq=100)
+#wandb.log({'Initial Weights': wandb.Histogram(model.parameters())})
 
-wandb.watch(model_conv,log_freq=100)
-
-model_conv = train_model(model_conv, criterion, optimizer_conv,
+model = train_model(model, criterion, optimizer_conv,
                          exp_lr_scheduler, num_epochs=NUM_EPOCHS)
 
-print(model_conv)
-# Spécifiez le chemin de sauvegarde souhaité
-model_path = 'model_5_frames_backward.pt'
-
-# Sauvegarde du modèle
-torch.save(model_conv.state_dict(), model_path)
+model_path = 'model_mean_no_relu.pt'
+torch.save(model.state_dict(), model_path)
 
 wandb.finish()
-
-####### VISUALIZATION ########
-
-

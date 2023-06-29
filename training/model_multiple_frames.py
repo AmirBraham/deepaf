@@ -1,4 +1,3 @@
-import io
 import os
 import math
 import torch
@@ -21,33 +20,35 @@ from tempfile import TemporaryDirectory
 import warnings
 import wandb
 
+# Ignorer les avertissements
+warnings.filterwarnings("ignore")
 
+TRAIN_SIZE = 2000
+TEST_SIZE = 1000
+VAL_SIZE = 10000
+BATCH_SIZE = 32
+NUMBER_FRAMES = 5
 NUM_EPOCHS = 10
+
+######### DATA ############
+
+wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
 
 # start a new wandb run to track this script
 wandb.init(
-    dir=".",
+    dir="./wandb",
     # set the wandb project where this run will be logged
-    project="my-awesome-project",
+    project="training_5_frames_backward",
     
     # track hyperparameters and run metadata
     config={
     "epochs": NUM_EPOCHS,
-    "batch_size":4
+    "batch_size": BATCH_SIZE
     }
 )
-wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
-
-
-# Ignorer les avertissements
-warnings.filterwarnings("ignore")
-
-MIN_FRAMES_PER_VIDEO = 50
-TRAIN_SIZE = 300
-TEST_SIZE = 150
-VAL_SIZE = 10000
 
 data_dir = '.'
+data_file = "dataset.csv"
 dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE,"val":VAL_SIZE}
 
 data_transforms = {
@@ -63,16 +64,16 @@ data_transforms = {
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
-    'val': transforms.Compose([
+        'val': transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ]),
+    ])
 }
 
 class CustomImageDataset(Dataset):
-    def __init__(self, annotations_file, video_dir, status="train", total_number=math.inf, transform=data_transforms, target_transform=None):
+    def __init__(self, annotations_file, video_dir, status="train", total_number=math.inf, number_frames = 1,transform=data_transforms, target_transform=None):
         df = pd.read_csv(annotations_file)
         self.video_labels = df[df["status"] == status]
         video_labels_0 = self.video_labels[self.video_labels["label"] == 0]
@@ -84,12 +85,11 @@ class CustomImageDataset(Dataset):
         video_labels_1 = video_labels_1.sample(num_samples)
 
         self.video_labels = pd.concat([video_labels_0, video_labels_1], ignore_index=True)[:total_number]
-        #self.video_labels = self.video_labels.sample(frac=1).reset_index(drop=True)[:min(len(self.video_labels), total_number)]
         self.video_dir = video_dir
         self.transform = transform[status]
         self.target_transform = target_transform
-        self.frame_indices = self._get_random_frame_indices(len(self.video_labels))
-        #print(self.video_labels)
+        self.number_frames = number_frames
+        print(self.video_labels)
 
     def __len__(self):
         return len(self.video_labels)
@@ -103,44 +103,58 @@ class CustomImageDataset(Dataset):
             video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 3], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
-        frame_index = self.frame_indices[idx]
-        frame = video_frames[frame_index]
-        frame.size()
+        num_frames = len(video_frames)
 
-        # Convertir la frame en objet PIL
-        frame_pil = Image.fromarray(frame.numpy().astype('uint8')).convert('RGB')
-        frame_pil.save("working_frame.png")
+        #frame_index = random.randint(0,num_frames-1-self.number_frames)
+        frames = [video_frames[-1 -i] for i in range(self.number_frames)]
 
-        # Appliquer les transformations d'images à la frame
-        if self.transform:
-            frame_transformed = self.transform(frame_pil)
-        else:
-            frame_transformed = frame_pil
+        frames_transformed = []
+        for frame in frames:
+            # Convertir la frame en objet PIL
+            frame_pil = Image.fromarray(frame.numpy().astype('uint8')).convert('RGB')
+            frame_pil.save("working_frame.png")
+
+            # Appliquer les transformations d'images à la frame
+            if self.transform:
+                frames_transformed.append(self.transform(frame_pil))
+            else:
+                frames_transformed.append(frame_pil)
 
         label = self.video_labels.iloc[idx, 1]
 
         if self.target_transform:
             label = self.target_transform(label)
 
-        return frame_transformed, label
+        return frames_transformed, label
 
-    def _get_random_frame_indices(self, num_videos):
-        frame_indices = []
-        for _ in range(num_videos):
-            frame_indices.append(random.randint(0, MIN_FRAMES_PER_VIDEO))  # Choix aléatoire d'une frame
-        return frame_indices
+image_dataset_train = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "train", total_number=TRAIN_SIZE,number_frames=NUMBER_FRAMES)
+image_dataset_test = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "test", total_number = TEST_SIZE,number_frames=NUMBER_FRAMES)
+image_dataset_val = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "val", total_number = VAL_SIZE,number_frames=NUMBER_FRAMES)
+image_dataloader_train = DataLoader(image_dataset_train,batch_size=BATCH_SIZE,shuffle=True, num_workers=4)
+image_dataloader_test = DataLoader(image_dataset_test,batch_size=BATCH_SIZE,shuffle=True, num_workers=4)
+image_dataloader_val = DataLoader(image_dataset_val,batch_size=1,shuffle=True, num_workers=4)
 
-image_dataset_train = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "train", total_number=TRAIN_SIZE)
-image_dataset_test = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "test", total_number = TEST_SIZE)
-image_dataset_val = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "val", total_number = VAL_SIZE)
-image_dataloader_train = DataLoader(image_dataset_train,batch_size=4,shuffle=True, num_workers=4)
-image_dataloader_test = DataLoader(image_dataset_test,batch_size=4,shuffle=True, num_workers=4)
-image_dataloader_val = DataLoader(image_dataset_test,batch_size=1,shuffle=True, num_workers=4)
+dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test, "val" : image_dataloader_val}
 
+###### MODEL #######
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print("Device: ", device)
 
-dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test, "val" : image_dataloader_val}
+model_conv = torchvision.models.resnet18(weights='IMAGENET1K_V1')
+for param in model_conv.parameters():
+    param.requires_grad = False
+
+num_ftrs = model_conv.fc.in_features
+model_conv.fc = nn.Linear(num_ftrs, 2)
+
+model_conv = model_conv.to(device)
+
+criterion = nn.CrossEntropyLoss()
+
+optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001)
+
+# Decay LR by a factor of 0.1 every 7 epochs
+exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
 
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()
@@ -153,8 +167,8 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
         best_acc = 0.0
 
         for epoch in range(num_epochs):
-            #print(f'Epoch {epoch}/{num_epochs - 1}')
-            #print('-' * 10)
+            print(f'Epoch {epoch}/{num_epochs - 1}')
+            print('-' * 10)
 
             # Each epoch has a training and validation phase
             for phase in ['train', 'test']:
@@ -168,7 +182,6 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
 
                 # Iterate over data.
                 for inputs, labels in dataloaders[phase]:
-                    inputs = inputs.to(device)
                     labels = labels.to(device)
 
                     # zero the parameter gradients
@@ -177,9 +190,22 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                     # forward
                     # track history if only in train
                     with torch.set_grad_enabled(phase == 'train'):
-                        outputs = model(inputs)
-                        _, preds = torch.max(outputs, 1)
-                        loss = criterion(outputs, labels)
+                        num_frames = len(inputs)
+                        batch_size = inputs[0].size(0)
+
+                        temp_loss = 0
+                        temp_preds = torch.Tensor([0 for i in range(batch_size)]).to(device)
+
+                        for index in range(num_frames):
+                            inputs_ieme_frame = inputs[index]
+                            inputs_ieme_frame = inputs_ieme_frame.to(device)
+                            outputs = model(inputs_ieme_frame)
+                            _, preds = torch.max(outputs, 1)
+                            temp_preds = torch.add(temp_preds,preds)
+                            temp_loss += criterion(outputs, labels)
+
+                        loss = temp_loss/num_frames
+                        preds = torch.round(temp_preds/num_frames)
 
                         # backward + optimize only if in training phase
                         if phase == 'train':
@@ -187,8 +213,9 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                             optimizer.step()
 
                     # statistics
-                    running_loss += loss.item() * inputs.size(0)
+                    running_loss += loss.item() * batch_size
                     running_corrects += torch.sum(preds == labels.data)
+                    
                 if phase == 'train':
                     scheduler.step()
 
@@ -210,36 +237,21 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
         model.load_state_dict(torch.load(best_model_params_path))
     return model
 
-model_conv = torchvision.models.resnet18(weights='IMAGENET1K_V1')
-for param in model_conv.parameters():
-    param.requires_grad = False
-
-# Parameters of newly constructed modules have requires_grad=True by default
-num_ftrs = model_conv.fc.in_features
-model_conv.fc = nn.Linear(num_ftrs, 2)
-
-model_conv = model_conv.to(device)
-
-criterion = nn.CrossEntropyLoss()
-
-# Observe that only parameters of final layer are being optimized as
-# opposed to before.
-optimizer_conv = optim.Adam(model_conv.fc.parameters(), lr=0.001)
-
-# Decay LR by a factor of 0.1 every 7 epochs
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
+######## TRAINING ########
 
 wandb.watch(model_conv,log_freq=100)
 
 model_conv = train_model(model_conv, criterion, optimizer_conv,
                          exp_lr_scheduler, num_epochs=NUM_EPOCHS)
 
-# Après l'entraînement du modèle et la sélection du meilleur modèle
-
+print(model_conv)
 # Spécifiez le chemin de sauvegarde souhaité
-model_path = 'model.pt'
+model_path = 'model_5_frames_backward.pt'
 
 # Sauvegarde du modèle
 torch.save(model_conv.state_dict(), model_path)
 
 wandb.finish()
+
+####### VISUALIZATION ########
+

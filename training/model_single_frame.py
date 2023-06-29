@@ -1,3 +1,4 @@
+import io
 import os
 import math
 import torch
@@ -19,15 +20,35 @@ import time
 from tempfile import TemporaryDirectory
 import warnings
 import wandb
-import torch.nn.functional as F
+
+
+NUM_EPOCHS = 10
+
+# start a new wandb run to track this script
+wandb.init(
+    dir=".",
+    # set the wandb project where this run will be logged
+    project="my-awesome-project",
+    
+    # track hyperparameters and run metadata
+    config={
+    "epochs": NUM_EPOCHS,
+    "batch_size":4
+    }
+)
+wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
+
 
 # Ignorer les avertissements
 warnings.filterwarnings("ignore")
 
-os.environ["WANDB_CONFIG_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
-os.environ["WANDB_CACHE_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
-os.environ["WANDB_DIR"] = "/home/pafvideo/deepaf/preprocessing/wandb"
+MIN_FRAMES_PER_VIDEO = 50
+TRAIN_SIZE = 300
+TEST_SIZE = 150
+VAL_SIZE = 10000
 
+data_dir = '.'
+dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE,"val":VAL_SIZE}
 
 data_transforms = {
     'train': transforms.Compose([
@@ -42,80 +63,16 @@ data_transforms = {
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
-        'val': transforms.Compose([
+    'val': transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
+    ]),
 }
 
-BATCH_SIZE = 32 
-TRAIN_SIZE = 50 * BATCH_SIZE #SHOULD ALWAYS BE A MULTIPLE OF BATCH_SIZE AND INFERIOR TO THE TOTAL NUMBERS OF VIDEO AVAILABLE
-TEST_SIZE = 25 * BATCH_SIZE
-VAL_SIZE = 10 * BATCH_SIZE
-NUMBER_FRAMES = 5 
-NUM_EPOCHS = 15
-
-wandb.login(key="59f93da2cc54b1f88fbb5aceb4e7f0e1fd7b983f")
-
-# start a new wandb run to track this script
-wandb.init(
-    dir="./wandb",
-    # set the wandb project where this run will be logged
-    project="training_mean_no_relu",
-    
-    # track hyperparameters and run metadata
-    config={
-    "epochs": NUM_EPOCHS,
-    "batch_size": BATCH_SIZE
-    }
-)
-
-data_dir = '.'
-data_file = "dataset.csv"
-dataset_sizes = {"train":TRAIN_SIZE,"test":TEST_SIZE,"val":VAL_SIZE}
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print("Device: ", device)
-
-model_conv = torchvision.models.resnet18(weights="IMAGENET1K_V1")
-for param in model_conv.parameters():
-    param.requires_grad = False
-num_ftrs = model_conv.fc.in_features
-model_conv.fc = nn.Linear(num_ftrs, 2)
-model_conv.load_state_dict(torch.load("./model_5_frames.pt"))
-model_conv = torch.nn.Sequential(*(list(model_conv.children())[:-1]))
-
-class DeepFakeModel(nn.Module):
-
-    def __init__(self,model):
-        # this is the place where you instantiate all your modules
-        # you can later access them using the same names you've given them in
-        # here
-        super(DeepFakeModel, self).__init__()
-        self.first_layers = model
-        self.classifier = nn.Linear(512,2)
-
-    # it's the forward function that defines the network structure
-    # we're accepting only a single input in here, but if you want,
-    # feel free to use more
-    def forward(self, input):
-        x = input.view(BATCH_SIZE*NUMBER_FRAMES,3,224,224)
-        x = self.first_layers(x)
-        x = x.view(BATCH_SIZE,NUMBER_FRAMES,-1)
-        x_moy = torch.mean(x,dim=1)
-        x_moy = self.classifier(x_moy)
-        return x_moy
-
-model = DeepFakeModel(model=model_conv).to(device)
-#model.load_state_dict(torch.load("./model_mean_.pt"))
-criterion = nn.CrossEntropyLoss()
-optimizer_conv = optim.SGD(model.parameters(), lr=0.01)
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
-
 class CustomImageDataset(Dataset):
-    def __init__(self, annotations_file, video_dir, status="train", total_number=math.inf, number_frames = 1,transform=data_transforms, target_transform=None):
+    def __init__(self, annotations_file, video_dir, status="train", total_number=math.inf, transform=data_transforms, target_transform=None):
         df = pd.read_csv(annotations_file)
         self.video_labels = df[df["status"] == status]
         video_labels_0 = self.video_labels[self.video_labels["label"] == 0]
@@ -127,10 +84,12 @@ class CustomImageDataset(Dataset):
         video_labels_1 = video_labels_1.sample(num_samples)
 
         self.video_labels = pd.concat([video_labels_0, video_labels_1], ignore_index=True)[:total_number]
+        #self.video_labels = self.video_labels.sample(frac=1).reset_index(drop=True)[:min(len(self.video_labels), total_number)]
         self.video_dir = video_dir
         self.transform = transform[status]
         self.target_transform = target_transform
-        self.number_frames = number_frames
+        self.frame_indices = self._get_random_frame_indices(len(self.video_labels))
+        #print(self.video_labels)
 
     def __len__(self):
         return len(self.video_labels)
@@ -144,38 +103,42 @@ class CustomImageDataset(Dataset):
             video_path = os.path.join(self.video_dir, self.video_labels.iloc[idx, 3], self.video_labels.iloc[idx, 0])
 
         video_frames,_,_ = read_video(video_path)
-        num_frames = len(video_frames)
+        frame_index = self.frame_indices[idx]
+        frame = video_frames[frame_index]
+        frame.size()
 
-        #frame_index = random.randint(0,num_frames-1-self.number_frames)
-        frames = [video_frames[-1 -i] for i in range(self.number_frames)]
+        # Convertir la frame en objet PIL
+        frame_pil = Image.fromarray(frame.numpy().astype('uint8')).convert('RGB')
+        frame_pil.save("working_frame.png")
 
-        frames_transformed = []
-        for frame in frames:
-            # Convertir la frame en objet PIL
-            frame_pil = Image.fromarray(frame.numpy().astype('uint8')).convert('RGB')
-            frame_pil.save("working_frame.png")
-
-            # Appliquer les transformations d'images à la frame
-            if self.transform:
-                frames_transformed.append(self.transform(frame_pil))
-            else:
-                frames_transformed.append(frame_pil)
-
-        frames_transformed = torch.stack(frames_transformed)
+        # Appliquer les transformations d'images à la frame
+        if self.transform:
+            frame_transformed = self.transform(frame_pil)
+        else:
+            frame_transformed = frame_pil
 
         label = self.video_labels.iloc[idx, 1]
 
         if self.target_transform:
             label = self.target_transform(label)
 
-        return frames_transformed, label
+        return frame_transformed, label
 
-image_dataset_train = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "train", total_number=TRAIN_SIZE,number_frames=NUMBER_FRAMES)
-image_dataset_test = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "test", total_number = TEST_SIZE,number_frames=NUMBER_FRAMES)
-image_dataset_val = CustomImageDataset(annotations_file = data_file, video_dir = data_dir, status = "val", total_number = VAL_SIZE,number_frames=NUMBER_FRAMES)
-image_dataloader_train = DataLoader(image_dataset_train,batch_size=BATCH_SIZE,shuffle=True, num_workers=4)
-image_dataloader_test = DataLoader(image_dataset_test,batch_size=BATCH_SIZE,shuffle=True, num_workers=4)
-image_dataloader_val = DataLoader(image_dataset_val,batch_size=1,shuffle=True, num_workers=4)
+    def _get_random_frame_indices(self, num_videos):
+        frame_indices = []
+        for _ in range(num_videos):
+            frame_indices.append(random.randint(0, MIN_FRAMES_PER_VIDEO))  # Choix aléatoire d'une frame
+        return frame_indices
+
+image_dataset_train = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "train", total_number=TRAIN_SIZE)
+image_dataset_test = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "test", total_number = TEST_SIZE)
+image_dataset_val = CustomImageDataset(annotations_file = "dataset.csv", video_dir = data_dir, status = "val", total_number = VAL_SIZE)
+image_dataloader_train = DataLoader(image_dataset_train,batch_size=4,shuffle=True, num_workers=4)
+image_dataloader_test = DataLoader(image_dataset_test,batch_size=4,shuffle=True, num_workers=4)
+image_dataloader_val = DataLoader(image_dataset_test,batch_size=1,shuffle=True, num_workers=4)
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print("Device: ", device)
 
 dataloaders = {"train" : image_dataloader_train, "test" : image_dataloader_test, "val" : image_dataloader_val}
 
@@ -190,8 +153,8 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
         best_acc = 0.0
 
         for epoch in range(num_epochs):
-            print(f'Epoch {epoch}/{num_epochs - 1}')
-            print('-' * 10)
+            #print(f'Epoch {epoch}/{num_epochs - 1}')
+            #print('-' * 10)
 
             # Each epoch has a training and validation phase
             for phase in ['train', 'test']:
@@ -232,13 +195,12 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                 epoch_loss = running_loss / dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
-                print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
+                #print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
                 wandb.log({"acc":epoch_acc,"loss":epoch_loss})
                 # deep copy the model
                 if phase == 'test' and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     torch.save(model.state_dict(), best_model_params_path)
-                #wandb.log({f'Epoch {epoch} Weights': wandb.Histogram(model.parameters())})
 
         time_elapsed = time.time() - since
         print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
@@ -248,13 +210,36 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
         model.load_state_dict(torch.load(best_model_params_path))
     return model
 
-wandb.watch(model,log_freq=100)
-#wandb.log({'Initial Weights': wandb.Histogram(model.parameters())})
+model_conv = torchvision.models.resnet18(weights='IMAGENET1K_V1')
+for param in model_conv.parameters():
+    param.requires_grad = False
 
-model = train_model(model, criterion, optimizer_conv,
+# Parameters of newly constructed modules have requires_grad=True by default
+num_ftrs = model_conv.fc.in_features
+model_conv.fc = nn.Linear(num_ftrs, 2)
+
+model_conv = model_conv.to(device)
+
+criterion = nn.CrossEntropyLoss()
+
+# Observe that only parameters of final layer are being optimized as
+# opposed to before.
+optimizer_conv = optim.Adam(model_conv.fc.parameters(), lr=0.001)
+
+# Decay LR by a factor of 0.1 every 7 epochs
+exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
+
+wandb.watch(model_conv,log_freq=100)
+
+model_conv = train_model(model_conv, criterion, optimizer_conv,
                          exp_lr_scheduler, num_epochs=NUM_EPOCHS)
 
-model_path = 'model_mean_no_relu.pt'
-torch.save(model.state_dict(), model_path)
+# Après l'entraînement du modèle et la sélection du meilleur modèle
+
+# Spécifiez le chemin de sauvegarde souhaité
+model_path = 'model.pt'
+
+# Sauvegarde du modèle
+torch.save(model_conv.state_dict(), model_path)
 
 wandb.finish()
